@@ -1462,7 +1462,7 @@ parse(char* col, long double& x)
 
 template <class overflow_policy, class T>
 void
-parse(char* col, T& x)
+parse(char* /*col*/, T& /*x*/)
 {
     // GCC evalutes "false" when reading the template and
     // "sizeof(T)!=sizeof(T)" only when instantiating it. This is why
