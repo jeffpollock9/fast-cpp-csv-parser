@@ -3,7 +3,7 @@
 #include <boost/test/test_tools.hpp>
 #include <boost/test/unit_test.hpp>
 
-#include <csv.hpp>
+#include <csv.h>
 
 BOOST_AUTO_TEST_CASE(test_read)
 {
