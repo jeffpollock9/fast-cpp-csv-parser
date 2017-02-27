@@ -29,8 +29,8 @@
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef CSV_H
-#define CSV_H
+#ifndef CSV_HPP_
+#define CSV_HPP_
 
 #include <vector>
 #include <string>
@@ -58,7 +58,7 @@ namespace io{
                 struct base : std::exception{
                         virtual void format_error_message()const = 0;                          
                        
-                        const char*what()const throw(){
+                        const char*what()const throw() override{
                                 format_error_message();
                                 return error_message_buffer;
                         }
@@ -109,15 +109,16 @@ namespace io{
                         base,
                         with_file_name,
                         with_errno{
-                        void format_error_message()const{
-                                if(errno_value != 0)
+                        void format_error_message()const override{
+                                if(errno_value != 0) {
                                         std::snprintf(error_message_buffer, sizeof(error_message_buffer),
-                                                "Can not open file \"%s\" because \"%s\"."
+                                                R"(Can not open file "%s" because "%s".)"
                                                 , file_name, std::strerror(errno_value));
-                                else
+                                } else {
                                         std::snprintf(error_message_buffer, sizeof(error_message_buffer),
                                                 "Can not open file \"%s\"."
                                                 , file_name);
+}
                         }
                 };
 
@@ -125,18 +126,18 @@ namespace io{
                         base,
                         with_file_name,
                         with_file_line{
-                        void format_error_message()const{
+                        void format_error_message()const override{
                                 std::snprintf(error_message_buffer, sizeof(error_message_buffer),
                                         "Line number %d in file \"%s\" exceeds the maximum length of 2^24-1."
                                         , file_line, file_name);
                         }
                 };
-        }
+        } // namespace error
 
         class ByteSourceBase{
         public:
                 virtual int read(char*buffer, int size)=0;
-                virtual ~ByteSourceBase(){}
+                virtual ~ByteSourceBase()= default;
         };
 
         namespace detail{
@@ -145,14 +146,14 @@ namespace io{
                 public:
                         explicit OwningStdIOByteSourceBase(FILE*file):file(file){
                                 // Tell the std library that we want to do the buffering ourself.
-                                std::setvbuf(file, 0, _IONBF, 0);
+                                std::setvbuf(file, nullptr, _IONBF, 0);
                         }
 
-                        int read(char*buffer, int size){
+                        int read(char*buffer, int size) override{
                                 return std::fread(buffer, 1, size, file);
                         }
 
-                        ~OwningStdIOByteSourceBase(){
+                        ~OwningStdIOByteSourceBase() override{
                                 std::fclose(file);
                         }
 
@@ -164,12 +165,12 @@ namespace io{
                 public:
                         explicit NonOwningIStreamByteSource(std::istream&in):in(in){}
 
-                        int read(char*buffer, int size){
+                        int read(char*buffer, int size) override{
                                 in.read(buffer, size);
                                 return in.gcount();
                         }
 
-                        ~NonOwningIStreamByteSource(){}
+                        ~NonOwningIStreamByteSource() override= default;
 
                 private:
                        std::istream&in;
@@ -179,17 +180,18 @@ namespace io{
                 public:
                         NonOwningStringByteSource(const char*str, long long size):str(str), remaining_byte_count(size){}
 
-                        int read(char*buffer, int desired_byte_count){
+                        int read(char*buffer, int desired_byte_count) override{
                                 int to_copy_byte_count = desired_byte_count;
-                                if(remaining_byte_count < to_copy_byte_count)
+                                if(remaining_byte_count < to_copy_byte_count) {
                                         to_copy_byte_count = remaining_byte_count;
+}
                                 std::memcpy(buffer, str, to_copy_byte_count);
                                 remaining_byte_count -= to_copy_byte_count;
                                 str += to_copy_byte_count;
                                 return to_copy_byte_count;
                         }
 
-                        ~NonOwningStringByteSource(){}
+                        ~NonOwningStringByteSource() override= default;
 
                 private:
                         const char*str;
@@ -215,13 +217,15 @@ namespace io{
                                                                                 return desired_byte_count != -1 || termination_requested;
                                                                         }
                                                                 );
-                                                                if(termination_requested)
+                                                                if(termination_requested) {
                                                                         return;
+}
 
                                                                 read_byte_count = byte_source->read(buffer, desired_byte_count);
                                                                 desired_byte_count = -1;
-                                                                if(read_byte_count == 0)
+                                                                if(read_byte_count == 0) {
                                                                         break;
+}
                                                                 read_finished_condition.notify_one();
                                                         }
                                                 }catch(...){
@@ -252,10 +256,11 @@ namespace io{
                                                 return read_byte_count != -1 || read_error;
                                         }
                                 );
-                                if(read_error)
+                                if(read_error) {
                                         std::rethrow_exception(read_error);
-                                else
+                                } else {
                                         return read_byte_count;
+}
                         }
 
                         ~AsynchronousReader(){
@@ -309,7 +314,7 @@ namespace io{
                         char*buffer;
                         int desired_byte_count;
                 };
-        }
+        } // namespace detail
 
         class LineReader{
         private:
@@ -330,7 +335,7 @@ namespace io{
                         // We open the file in binary mode as it makes no difference under *nix
                         // and under Windows we handle \r\n newlines ourself.
                         FILE*file = std::fopen(file_name, "rb");
-                        if(file == 0){
+                        if(file == nullptr){
                                 int x = errno; // store errno as soon as possible, doing it after constructor call can fail.
                                 error::can_not_open_file err;
                                 err.set_errno(x);
@@ -348,8 +353,9 @@ namespace io{
                         data_end = byte_source->read(buffer.get(), 2*block_len);
 
                         // Ignore UTF-8 BOM
-                        if(data_end >= 3 && buffer[0] == '\xEF' && buffer[1] == '\xBB' && buffer[2] == '\xBF')
+                        if(data_end >= 3 && buffer[0] == '\xEF' && buffer[1] == '\xBB' && buffer[2] == '\xBF') {
                                 data_begin = 3;
+}
 
                         if(data_end == 2*block_len){
                                 reader.init(std::move(byte_source));
@@ -434,8 +440,9 @@ namespace io{
                 }
 
                 char*next_line(){
-                        if(data_begin == data_end)
-                                return 0;
+                        if(data_begin == data_end) {
+                                return nullptr;
+}
 
                         ++file_line;
 
@@ -476,10 +483,11 @@ namespace io{
                         }
 
                         // handle windows \r\n-line breaks
-                        if(line_end != data_begin && buffer[line_end-1] == '\r')
+                        if(line_end != data_begin && buffer[line_end-1] == '\r') {
                                 buffer[line_end-1] = '\0';
 
-                        char*ret = buffer.get() + data_begin;
+                        
+}char*ret = buffer.get() + data_begin;
                         data_begin = line_end+1;
                         return ret;
                 }
@@ -526,9 +534,9 @@ namespace io{
                         base,
                         with_file_name,
                         with_column_name{
-                        void format_error_message()const{
+                        void format_error_message()const override{
                                 std::snprintf(error_message_buffer, sizeof(error_message_buffer),
-                                        "Extra column \"%s\" in header of file \"%s\"."
+                                        R"(Extra column "%s" in header of file "%s".)"
                                         , column_name, file_name);
                         }
                 };
@@ -537,9 +545,9 @@ namespace io{
                         base,
                         with_file_name,
                         with_column_name{
-                        void format_error_message()const{
+                        void format_error_message()const override{
                                 std::snprintf(error_message_buffer, sizeof(error_message_buffer),
-                                        "Missing column \"%s\" in header of file \"%s\"."
+                                        R"(Missing column "%s" in header of file "%s".)"
                                         , column_name, file_name);
                         }
                 };
@@ -548,9 +556,9 @@ namespace io{
                         base,
                         with_file_name,
                         with_column_name{
-                        void format_error_message()const{
+                        void format_error_message()const override{
                                 std::snprintf(error_message_buffer, sizeof(error_message_buffer),
-                                        "Duplicated column \"%s\" in header of file \"%s\"."
+                                        R"(Duplicated column "%s" in header of file "%s".)"
                                         , column_name, file_name);
                         }
                 };
@@ -558,7 +566,7 @@ namespace io{
                 struct header_missing :
                         base,
                         with_file_name{
-                        void format_error_message()const{
+                        void format_error_message()const override{
                                 std::snprintf(error_message_buffer, sizeof(error_message_buffer),
                                         "Header missing in file \"%s\"."
                                         , file_name);
@@ -569,7 +577,7 @@ namespace io{
                         base,
                         with_file_name,
                         with_file_line{
-                        void format_error_message()const{
+                        void format_error_message()const override{
                                 std::snprintf(error_message_buffer, sizeof(error_message_buffer),
                                         "Too few columns in line %d in file \"%s\"."
                                         , file_line, file_name);
@@ -580,7 +588,7 @@ namespace io{
                         base,
                         with_file_name,
                         with_file_line{
-                        void format_error_message()const{
+                        void format_error_message()const override{
                                 std::snprintf(error_message_buffer, sizeof(error_message_buffer),
                                         "Too many columns in line %d in file \"%s\"."
                                         , file_line, file_name);
@@ -591,7 +599,7 @@ namespace io{
                         base,
                         with_file_name,
                         with_file_line{
-                        void format_error_message()const{
+                        void format_error_message()const override{
                                 std::snprintf(error_message_buffer, sizeof(error_message_buffer),
                                         "Escaped string was not closed in line %d in file \"%s\"."
                                         , file_line, file_name);
@@ -604,9 +612,9 @@ namespace io{
                         with_file_line,
                         with_column_name,
                         with_column_content{
-                        void format_error_message()const{
+                        void format_error_message()const override{
                                 std::snprintf(error_message_buffer, sizeof(error_message_buffer),
-                                        "The integer \"%s\" must be positive or 0 in column \"%s\" in file \"%s\" in line \"%d\"."
+                                        R"(The integer "%s" must be positive or 0 in column "%s" in file "%s" in line "%d".)"
                                         , column_content, column_name, file_name, file_line);
                         }
                 };
@@ -617,9 +625,9 @@ namespace io{
                         with_file_line,
                         with_column_name,
                         with_column_content{
-                        void format_error_message()const{
+                        void format_error_message()const override{
                                 std::snprintf(error_message_buffer, sizeof(error_message_buffer),
-                                        "The integer \"%s\" contains an invalid digit in column \"%s\" in file \"%s\" in line \"%d\"."
+                                        R"(The integer "%s" contains an invalid digit in column "%s" in file "%s" in line "%d".)"
                                         , column_content, column_name, file_name, file_line);
                         }
                 };
@@ -630,9 +638,9 @@ namespace io{
                         with_file_line,
                         with_column_name,
                         with_column_content{
-                        void format_error_message()const{
+                        void format_error_message()const override{
                                 std::snprintf(error_message_buffer, sizeof(error_message_buffer),
-                                        "The integer \"%s\" overflows in column \"%s\" in file \"%s\" in line \"%d\"."
+                                        R"(The integer "%s" overflows in column "%s" in file "%s" in line "%d".)"
                                         , column_content, column_name, file_name, file_line);
                         }
                 };
@@ -643,9 +651,9 @@ namespace io{
                         with_file_line,
                         with_column_name,
                         with_column_content{
-                        void format_error_message()const{
+                        void format_error_message()const override{
                                 std::snprintf(error_message_buffer, sizeof(error_message_buffer),
-                                        "The integer \"%s\" underflows in column \"%s\" in file \"%s\" in line \"%d\"."
+                                        R"(The integer "%s" underflows in column "%s" in file "%s" in line "%d".)"
                                         , column_content, column_name, file_name, file_line);
                         }
                 };
@@ -656,15 +664,15 @@ namespace io{
                         with_file_line,
                         with_column_name,
                         with_column_content{
-                        void format_error_message()const{
+                        void format_error_message()const override{
                                 std::snprintf(error_message_buffer, sizeof(error_message_buffer),
-                                        "The content \"%s\" of column \"%s\" in file \"%s\" in line \"%d\" is not a single character."
+                                        R"(The content "%s" of column "%s" in file "%s" in line "%d" is not a single character.)"
                                         , column_content, column_name, file_name, file_line);
                         }
                 };
-        }
+        } // namespace error
 
-        typedef unsigned ignore_column;
+        using ignore_column = unsigned int;
         static const ignore_column ignore_no_column = 0;
         static const ignore_column ignore_extra_column = 1;
         static const ignore_column ignore_missing_column = 2;
@@ -672,7 +680,7 @@ namespace io{
         template<char ... trim_char_list>
         struct trim_chars{
         private:
-                constexpr static bool is_trim_char(char){
+                constexpr static bool is_trim_char(char /*unused*/){
                         return false;
                 }
        
@@ -683,17 +691,19 @@ namespace io{
 
         public:
                 static void trim(char*&str_begin, char*&str_end){
-                        while(is_trim_char(*str_begin, trim_char_list...) && str_begin != str_end)
+                        while(is_trim_char(*str_begin, trim_char_list...) && str_begin != str_end) {
                                 ++str_begin;
-                        while(is_trim_char(*(str_end-1), trim_char_list...) && str_begin != str_end)
+}
+                        while(is_trim_char(*(str_end-1), trim_char_list...) && str_begin != str_end) {
                                 --str_end;
+}
                         *str_end = '\0';
                 }
         };
 
 
         struct no_comment{
-                static bool is_comment(const char*){
+                static bool is_comment(const char* /*unused*/){
                         return false;
                 }
         };
@@ -701,7 +711,7 @@ namespace io{
         template<char ... comment_start_char_list>
         struct single_line_comment{
         private:
-                constexpr static bool is_comment_start_char(char){
+                constexpr static bool is_comment_start_char(char /*unused*/){
                         return false;
                 }
        
@@ -719,12 +729,14 @@ namespace io{
 
         struct empty_line_comment{
                 static bool is_comment(const char*line){
-                        if(*line == '\0')
+                        if(*line == '\0') {
                                 return true;
+}
                         while(*line == ' ' || *line == '\t'){
                                 ++line;
-                                if(*line == 0)
+                                if(*line == 0) {
                                         return true;
+}
                         }
                         return false;
                 }
@@ -740,12 +752,13 @@ namespace io{
         template<char sep>
         struct no_quote_escape{
                 static const char*find_next_column_end(const char*col_begin){
-                        while(*col_begin != sep && *col_begin != '\0')
+                        while(*col_begin != sep && *col_begin != '\0') {
                                 ++col_begin;
+}
                         return col_begin;
                 }
 
-                static void unescape(char*&, char*&){
+                static void unescape(char*& /*unused*/, char*& /*unused*/){
 
                 }
         };
@@ -753,20 +766,22 @@ namespace io{
         template<char sep, char quote>
         struct double_quote_escape{
                 static const char*find_next_column_end(const char*col_begin){
-                        while(*col_begin != sep && *col_begin != '\0')
-                                if(*col_begin != quote)
+                        while(*col_begin != sep && *col_begin != '\0') {
+                                if(*col_begin != quote) {
                                         ++col_begin;
-                                else{
+                                } else{
                                         do{
                                                 ++col_begin;
                                                 while(*col_begin != quote){
-                                                        if(*col_begin == '\0')
+                                                        if(*col_begin == '\0') {
                                                                 throw error::escaped_string_not_closed();
+}
                                                         ++col_begin;
                                                 }
                                                 ++col_begin;
                                         }while(*col_begin == quote);
                                 }      
+}
                         return col_begin;      
                 }
 
@@ -793,22 +808,22 @@ namespace io{
 
         struct throw_on_overflow{
                 template<class T>
-                static void on_overflow(T&){
+                static void on_overflow(T& /*unused*/){
                         throw error::integer_overflow();
                 }
                
                 template<class T>
-                static void on_underflow(T&){
+                static void on_underflow(T& /*unused*/){
                         throw error::integer_underflow();
                 }
         };
 
         struct ignore_overflow{
                 template<class T>
-                static void on_overflow(T&){}
+                static void on_overflow(T& /*unused*/){}
                
                 template<class T>
-                static void on_underflow(T&){}
+                static void on_underflow(T& /*unused*/){}
         };
 
         struct set_to_max_on_overflow{
@@ -849,21 +864,23 @@ namespace io{
                         char**sorted_col,
                         const std::vector<int>&col_order
                 ){
-                        for(std::size_t i=0; i<col_order.size(); ++i){
-                                if(line == nullptr)
+                        for(int i : col_order){
+                                if(line == nullptr) {
                                         throw ::io::error::too_few_columns();
+}
                                 char*col_begin, *col_end;
                                 chop_next_column<quote_policy>(line, col_begin, col_end);
 
-                                if(col_order[i] != -1){
+                                if(i != -1){
                                         trim_policy::trim(col_begin, col_end);
                                         quote_policy::unescape(col_begin, col_end);
                                                                
-                                        sorted_col[col_order[i]] = col_begin;
+                                        sorted_col[i] = col_begin;
                                 }
                         }
-                        if(line != nullptr)
+                        if(line != nullptr) {
                                 throw ::io::error::too_many_columns();
+}
                 }
 
                 template<unsigned column_count, class trim_policy, class quote_policy>
@@ -884,7 +901,7 @@ namespace io{
                                 trim_policy::trim(col_begin, col_end);
                                 quote_policy::unescape(col_begin, col_end);
                                
-                                for(unsigned i=0; i<column_count; ++i)
+                                for(unsigned i=0; i<column_count; ++i) {
                                         if(col_begin == col_name[i]){
                                                 if(found[i]){
                                                         error::duplicated_column_in_header err;
@@ -893,13 +910,14 @@ namespace io{
                                                 }
                                                 found[i] = true;
                                                 col_order.push_back(i);
-                                                col_begin = 0;
+                                                col_begin = nullptr;
                                                 break;
                                         }
+}
                                 if(col_begin){
-                                        if(ignore_policy & ::io::ignore_extra_column)
+                                        if(ignore_policy & ::io::ignore_extra_column) {
                                                 col_order.push_back(-1);
-                                        else{
+                                        } else{
                                                 error::extra_column_in_header err;
                                                 err.set_column_name(col_begin);
                                                 throw err;
@@ -919,12 +937,14 @@ namespace io{
 
                 template<class overflow_policy>
                 void parse(char*col, char &x){
-                        if(!*col)
+                        if(!*col) {
                                 throw error::invalid_single_character();
+}
                         x = *col;
                         ++col;
-                        if(*col)
+                        if(*col) {
                                 throw error::invalid_single_character();
+}
                 }
                
                 template<class overflow_policy>
@@ -933,7 +953,7 @@ namespace io{
                 }
 
                 template<class overflow_policy>
-                void parse(char*col, const char*&x){
+                void parse(const char*col, const char*&x){
                         x = col;
                 }
 
@@ -953,8 +973,9 @@ namespace io{
                                                 return;
                                         }
                                         x = 10*x+y;
-                                }else
+                                }else {
                                         throw error::no_digit();
+}
                                 ++col;
                         }
                 }
@@ -984,13 +1005,15 @@ namespace io{
                                                         return;
                                                 }
                                                 x = 10*x-y;
-                                        }else
+                                        }else {
                                                 throw error::no_digit();
+}
                                         ++col;
                                 }
                                 return;
-                        }else if(*col == '+')
+                        }if(*col == '+') {
                                 ++col;
+}
                         parse_unsigned_integer<overflow_policy>(col, x);
                 }      
 
@@ -1011,8 +1034,9 @@ namespace io{
                         if(*col == '-'){
                                 is_neg = true;
                                 ++col;
-                        }else if(*col == '+')
+                        }else if(*col == '+') {
                                 ++col;
+}
 
                         x = 0;
                         while('0' <= *col && *col <= '9'){
@@ -1060,12 +1084,14 @@ namespace io{
                                         x *= base;
                                 }
                         }else{
-                                if(*col != '\0')
+                                if(*col != '\0') {
                                         throw error::no_digit();
+}
                         }
 
-                        if(is_neg)
+                        if(is_neg) {
                                 x = -x;
+}
                 }
 
                 template<class overflow_policy> void parse(char*col, float&x) { parse_float(col, x); }
@@ -1081,7 +1107,7 @@ namespace io{
                                 "Can not parse this type. Only buildin integrals, floats, char, char*, const char* and std::string are supported");
                 }
 
-        }
+        } // namespace detail
 
         template<unsigned column_count,
                 class trim_policy = trim_chars<' ', '\t'>,
@@ -1116,10 +1142,12 @@ namespace io{
                 explicit CSVReader(Args&&...args):in(std::forward<Args>(args)...){
                         std::fill(row, row+column_count, nullptr);
                         col_order.resize(column_count);
-                        for(unsigned i=0; i<column_count; ++i)
+                        for(unsigned i=0; i<column_count; ++i) {
                                 col_order[i] = i;
-                        for(unsigned i=1; i<=column_count; ++i)
+}
+                        for(unsigned i=1; i<=column_count; ++i) {
                                 column_names[i-1] = "col"+std::to_string(i);
+}
                 }
 
 		char*next_line(){
@@ -1136,8 +1164,9 @@ namespace io{
                                 char*line;
                                 do{
                                         line = in.next_line();
-                                        if(!line)
+                                        if(!line) {
                                                 throw error::header_missing();
+}
                                 }while(comment_policy::is_comment(line));
 
                                 detail::parse_header_line
@@ -1158,8 +1187,9 @@ namespace io{
                         set_column_names(std::forward<ColNames>(cols)...);
                         std::fill(row, row+column_count, nullptr);
                         col_order.resize(column_count);
-                        for(unsigned i=0; i<column_count; ++i)
+                        for(unsigned i=0; i<column_count; ++i) {
                                 col_order[i] = i;
+}
                 }
 
                 bool has_column(const std::string&name) const {
@@ -1190,7 +1220,7 @@ namespace io{
                 }
 
         private:
-                void parse_helper(std::size_t){}
+                void parse_helper(std::size_t /*unused*/){}
 
                 template<class T, class ...ColType>
                 void parse_helper(std::size_t r, T&t, ColType&...cols){                        
@@ -1224,8 +1254,9 @@ namespace io{
                                         char*line;
                                         do{
                                                 line = in.next_line();
-                                                if(!line)
+                                                if(!line) {
                                                         return false;
+}
                                         }while(comment_policy::is_comment(line));
                                        
                                         detail::parse_line<trim_policy, quote_policy>
@@ -1244,6 +1275,6 @@ namespace io{
                         return true;
                 }
         };
-}
+} // namespace io
 #endif
 
