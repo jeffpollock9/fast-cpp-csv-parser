@@ -131,7 +131,7 @@ struct can_not_open_file : base, with_file_name, with_errno
         {
             std::snprintf(error_message_buffer,
                           sizeof(error_message_buffer),
-                          "Can not open file \"%s\".",
+                          R"(Can not open file "%s".)",
                           file_name);
         }
     }
@@ -144,8 +144,7 @@ struct line_length_limit_exceeded : base, with_file_name, with_file_line
     {
         std::snprintf(error_message_buffer,
                       sizeof(error_message_buffer),
-                      "Line number %d in file \"%s\" exceeds the maximum "
-                      "length of 2^24-1.",
+                      R"(Line number %d in file "%s" exceeds the maximum length of 2^24-1.)",
                       file_line,
                       file_name);
     }
@@ -697,7 +696,7 @@ struct header_missing : base, with_file_name
     {
         std::snprintf(error_message_buffer,
                       sizeof(error_message_buffer),
-                      "Header missing in file \"%s\".",
+                      R"(Header missing in file "%s".)",
                       file_name);
     }
 };
@@ -709,7 +708,7 @@ struct too_few_columns : base, with_file_name, with_file_line
     {
         std::snprintf(error_message_buffer,
                       sizeof(error_message_buffer),
-                      "Too few columns in line %d in file \"%s\".",
+                      R"(Too few columns in line %d in file "%s".)",
                       file_line,
                       file_name);
     }
@@ -722,7 +721,7 @@ struct too_many_columns : base, with_file_name, with_file_line
     {
         std::snprintf(error_message_buffer,
                       sizeof(error_message_buffer),
-                      "Too many columns in line %d in file \"%s\".",
+                      R"(Too many columns in line %d in file "%s".)",
                       file_line,
                       file_name);
     }
@@ -736,7 +735,7 @@ struct escaped_string_not_closed : base, with_file_name, with_file_line
         std::snprintf(
             error_message_buffer,
             sizeof(error_message_buffer),
-            "Escaped string was not closed in line %d in file \"%s\".",
+            R"(Escaped string was not closed in line %d in file "%s".)",
             file_line,
             file_name);
     }
